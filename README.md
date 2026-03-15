@@ -1,6 +1,6 @@
-# 🧠 Memory Bridge - Supabase Edition
+# 🧠 Memory Bridge - Production Edition
 
-**Production-ready, multi-user memory system with Notion & Obsidian sync.**
+**Complete, production-ready memory system with bi-directional sync.**
 
 ---
 
@@ -8,16 +8,23 @@
 
 ### Core
 - ✅ Collections (folders)
-- ✅ Memories with metadata  
+- ✅ Memories with metadata
 - ✅ Tags
 - ✅ Full-text search
 - ✅ User authentication
 
 ### Sync (Bi-directional)
-- ✅ Obsidian → Supabase
-- ✅ Notion → Supabase
-- ✅ Supabase → Obsidian (manual)
-- ✅ Supabase → Notion (manual)
+- ✅ Obsidian ↔ Supabase
+- ✅ Notion ↔ Supabase
+- ✅ Conflict detection
+- ✅ Content hash tracking
+
+### Error Handling
+- ✅ Automatic retry with backoff
+- ✅ Rate limit handling
+- ✅ Authentication errors
+- ✅ Comprehensive logging
+- ✅ Error tracking
 
 ### Security
 - ✅ Row-level security (RLS)
@@ -28,42 +35,98 @@
 
 ## Quick Start
 
-### 1. Create Supabase Project
-1. Go to [supabase.com](https://supabase.com)
-2. Create a new project
-3. Run `schema.sql` in SQL Editor
-4. Get your credentials
-
-### 2. Install & Configure
-
 ```python
-from client_complete import create_memory_client
+from client_production import create_memory_client, ClientConfig
+
+# Configure client
+config = ClientConfig(
+    max_retries=3,
+    retry_delay=2.0,
+    verbose=True
+)
 
 client = create_memory_client(
     supabase_url="https://your-project.supabase.co",
     supabase_key="your-anon-key",
-    user_id="your-user-id"
+    user_id="user-id",
+    config=config
 )
-```
 
-### 3. Use
-
-```python
-# Create memory
+# Create memory (with automatic retry)
 memory = client.create_memory(
     title="EURUSD Trade",
-    content="Bearish divergence on 4H chart",
-    tags=["forex", "trading"]
+    content="Bearish divergence on 4H"
 )
-
-# Search
-results = client.search("EURUSD")
-
-# Get all
-memories = client.get_memories()
 ```
 
----
+## Error Handling
+
+The client handles:
+
+| Error Type | Handling |
+|-----------|----------|
+| Network timeout | Retry with backoff |
+| Rate limited (429) | Wait and retry |
+| Auth error | Raise AuthenticationError |
+| Not found (404) | Raise NotFoundError |
+| Other errors | Retry, then raise |
+
+```python
+from client_production import (
+    create_memory_client,
+    AuthenticationError,
+    NotFoundError,
+    ClientError
+)
+
+try:
+    memory = client.create_memory(title="Test", content="Content")
+except AuthenticationError:
+    print("Check your credentials")
+except NotFoundError:
+    print("Resource not found")
+except ClientError as e:
+    print(f"Failed: {e}")
+```
+
+## Sync with Error Handling
+
+### Obsidian Sync
+
+```python
+from obsidian_sync_production import create_obsidian_sync, SyncDirection
+
+# Create sync with direction
+sync = create_obsidian_sync(
+    vault_path="/path/to/vault",
+    memory_client=client,
+    direction=SyncDirection.BIDIRECTIONAL
+)
+
+# Sync (returns detailed result)
+result = sync.sync_bidirectional(force=False)
+
+print(f"Status: {result.status}")
+print(f"Synced: {result.synced}")
+print(f"Failed: {result.failed}")
+print(f"Errors: {result.errors}")
+```
+
+### Notion Sync
+
+```python
+from notion_sync_production import create_notion_sync, SyncDirection
+
+sync = create_notion_sync(
+    notion_client=notion,
+    memory_client=client,
+    direction=SyncDirection.BIDIRECTIONAL
+)
+
+result = sync.sync_bidirectional()
+
+print(f"Status: {result.status}")
+```
 
 ## API
 
@@ -76,109 +139,53 @@ python api_complete.py
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/collections` | List collections |
-| POST | `/collections` | Create collection |
-| DELETE | `/collections/{id}` | Delete collection |
-| GET | `/memories` | List memories |
 | POST | `/memories` | Create memory |
+| GET | `/memories` | List memories |
 | GET | `/memories/{id}` | Get memory |
 | PUT | `/memories/{id}` | Update memory |
 | DELETE | `/memories/{id}` | Delete memory |
 | POST | `/search` | Search |
-| POST | `/sync/obsidian` | Sync from Obsidian |
-| POST | `/sync/notion` | Sync from Notion |
-| GET | `/stats` | Statistics |
-
-### Example
-
-```bash
-# Create memory
-curl -X POST http://localhost:8003/memories \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Test",
-    "content": "Memory content"
-  }'
-
-# Search
-curl -X POST http://localhost:8003/search \
-  -H "Content-Type: application/json" \
-  -d '{"query": "EURUSD", "limit": 10}'
-```
-
----
-
-## Sync Examples
-
-### Obsidian → Supabase
-
-```python
-from client_complete import create_memory_client
-from obsidian_sync import create_obsidian_sync
-
-client = create_memory_client(url, key, user_id)
-sync = create_obsidian_sync("/path/to/vault", client)
-result = sync.sync_to_supabase()
-```
-
-### Notion → Supabase
-
-```python
-from notion_client import Client as NotionClient
-from client_complete import create_memory_client
-
-notion = NotionClient(auth="your-token")
-notion.database_id = "your-db-id"
-
-client = create_memory_client(url, key, user_id)
-result = client.sync_from_notion(notion)
-```
-
----
-
-## Architecture
-
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  Obsidian  │────▶│  Supabase   │◀────│   Notion   │
-│   Vault    │     │ PostgreSQL  │     │   Pages    │
-└─────────────┘     └──────┬──────┘     └─────────────┘
-                          │
-                   ┌──────▼──────┐
-                   │  REST API   │
-                   │  Python SDK  │
-                   └─────────────┘
-```
-
----
+| GET | `/collections` | List collections |
+| POST | `/collections` | Create collection |
+| DELETE | `/collections/{id}` | Delete collection |
 
 ## Files
 
 | File | Description |
 |------|-------------|
 | `schema.sql` | Database schema |
-| `client_complete.py` | Full Python client |
-| `obsidian_sync.py` | Obsidian sync |
-| `notion_sync.py` | Notion sync |
+| `rls_production.sql` | Production security |
+| `client_production.py` | Client with error handling |
+| `obsidian_sync_production.py` | Obsidian sync |
+| `notion_sync_production.py` | Notion sync |
 | `api_complete.py` | REST API |
-| `embeddings.py` | Vector embeddings |
 
----
+## Architecture
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Obsidian  │────▶│  Supabase   │◀────│   Notion   │
+│   Vault    │◀────│ PostgreSQL  │────▶│   Pages    │
+└─────────────┘     └──────┬──────┘     └─────────────┘
+                          │
+                   ┌──────▼──────┐
+                   │  API + SDK   │
+                   │   + Errors  │
+                   └─────────────┘
+```
 
 ## Status
 
 | Feature | Status |
-|---------|---------|
-| Create/Read memories | ✅ |
-| Collections | ✅ |
-| Tags | ✅ |
-| Search | ✅ |
-| Obsidian sync | ✅ |
-| Notion sync | ✅ |
-| Vector embeddings | 🔄 |
-| REST API | ✅ |
-| Production RLS | 🔄 |
+|---------|--------|
+| CRUD Operations | ✅ |
+| Bi-directional Sync | ✅ |
+| Error Handling | ✅ |
+| Retry Logic | ✅ |
+| Logging | ✅ |
+| RLS | ✅ |
+| Production Ready | ✅ |
 
 ---
 
-**Note:** Run schema.sql in Supabase first. Get credentials from Settings → API.
+**Note:** Run `schema.sql` first, then `rls_production.sql` for production.
