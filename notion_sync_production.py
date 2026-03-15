@@ -100,7 +100,7 @@ class NotionSync:
         """Extract plain text from rich text"""
         try:
             return ''.join([t.get('plain_text', '') for t in rich_text])
-        except:
+        except Exception:
             return ''
     
     def _get_page_content(self, page_id: str) -> str:
