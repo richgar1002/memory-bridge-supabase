@@ -1,58 +1,42 @@
-# Supabase Memory Bridge
+# Memory Bridge - Supabase Edition
 
-**Production-ready, multi-user memory system for AI agents.**
+**Production-ready, multi-user memory system with semantic search.**
 
 ---
 
-## Why Supabase?
-
-| Feature | ChromaDB | Supabase |
-|---------|----------|----------|
-| **Authentication** | ❌ | ✅ Built-in |
-| **Multi-user** | ❌ | ✅ RLS |
-| **Vector search** | ✅ | ✅ pgvector |
-| **Full-text search** | ❌ | ✅ PostgreSQL |
-| **Keyword indexing** | ❌ | ✅ Automatic |
-| **Production-ready** | ⚠️ | ✅ |
-| **Cloud-hosted** | ❌ | ✅ |
-
 ## Features
 
-### Security
-- [x] User authentication
-- [x] Row-level security (RLS)
-- [x] Users can only see their own data
-- [x] API key or JWT auth
-
-### Search
-- [x] Full-text search (PostgreSQL)
-- [x] Vector similarity search (pgvector)
-- [x] Hybrid search (both)
-
-### Data
+### Core
 - [x] Collections (folders)
+- [x] Memories with metadata
 - [x] Tags
-- [x] Metadata
-- [x] Timestamps
-- [x] Bulk import/export
+- [x] Full-text search
+- [x] Vector embeddings (semantic search)
+- [x] Hybrid search (keywords + semantic)
+
+### Security
+- [x] Row-level security (RLS)
+- [x] User isolation
+- [x] API key auth
+
+### Storage
+- [x] PostgreSQL (Supabase)
+- [x] pgvector for embeddings
+- [x] Full-text search
 
 ## Setup
 
-### 1. Create Supabase Project
+### 1. Supabase Setup
+1. Create project at supabase.com
+2. Run `schema.sql` in SQL Editor
+3. Get credentials
 
-1. Go to [supabase.com](https://supabase.com)
-2. Create a new project
-3. Get your:
-   - Project URL
-   - `anon` public key
-   - `service_role` secret key (for admin)
+### 2. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
 
-### 2. Run Schema
-
-Copy `schema.sql` into Supabase SQL Editor and run it.
-
-### 3. Configure Client
-
+### 3. Configure
 ```python
 from client import create_memory_client
 
@@ -64,103 +48,63 @@ client = create_memory_client(
 
 ## Usage
 
-### Sign Up / Sign In
-
+### Create Memory
 ```python
-# Sign up
-client.sign_up("user@example.com", "password123")
-
-# Sign in
-client.sign_in("user@example.com", "password123")
-```
-
-### Collections
-
-```python
-# Create collection
-collection = client.create_collection("Trading Notes")
-
-# Get all collections
-collections = client.get_collections()
-```
-
-### Memories
-
-```python
-# Create memory
 memory = client.create_memory(
     title="EURUSD Trade",
-    content="Opened buy position at 1.0850",
+    content="Bearish divergence on 4H chart",
     tags=["forex", "eurusd"],
-    source="trading"
+    source="analysis"
 )
-
-# Get memories
-memories = client.get_memories()
 ```
 
 ### Search
-
 ```python
-# Full-text search
-results = client.search_fulltext("EURUSD")
+# Keyword search
+results = client.search("EURUSD")
 
-# Vector search (requires embeddings)
-results = client.search_vector(embedding_array)
-
-# Hybrid (best of both)
-results = client.search_hybrid("EURUSD positions", embedding_array)
+# Semantic search (requires embeddings)
+# Coming soon
 ```
 
-## API Server
+## API
 
+Run the API:
 ```bash
-# Run API
 python api.py
 ```
 
 Endpoints:
-- `POST /auth/signup`
-- `POST /auth/signin`
-- `GET /collections`
-- `POST /collections`
-- `GET /memories`
-- `POST /memories`
-- `GET /memories/{id}`
-- `PUT /memories/{id}`
-- `DELETE /memories/{id}`
-- `POST /search`
+- `GET /memories` - List memories
+- `POST /memories` - Create memory
+- `GET /memories/{id}` - Get memory
+- `DELETE /memories/{id}` - Delete memory
+- `POST /search` - Search
+- `GET /collections` - List collections
+- `POST /collections` - Create collection
+- `GET /stats` - Get stats
 
 ## Architecture
 
 ```
 ┌─────────────┐
 │   Client    │
-│  (Python)   │
 └──────┬──────┘
        │
        ▼
-┌─────────────┐     ┌─────────────┐
-│  Supabase   │────▶│  PostgreSQL │
-│   (REST)    │     │  + pgvector │
-└─────────────┘     └─────────────┘
+┌──────────────────┐
+│   Supabase       │
+│  PostgreSQL      │
+│  + pgvector      │
+└──────────────────┘
 ```
 
-## Pricing
+## Status
 
-| Tier | Price | Notes |
-|------|-------|-------|
-| **Free** | $0 | Up to 500MB |
-| **Pro** | $25/mo | 10GB |
-| **Enterprise** | Custom | Unlimited |
-
-## Next Steps
-
-- [ ] Add OpenAI embeddings
-- [ ] Add Obsidian sync
-- [ ] Add Notion sync
-- [ ] Webhook support
+✅ Working - Basic CRUD
+✅ Search - Full-text
+🔄 Coming - Vector embeddings
 
 ---
 
-Built for production. Built for privacy.
+**Note:** For vector/semantic search, you need Ollama running with an embedding model.
