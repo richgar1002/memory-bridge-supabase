@@ -119,3 +119,45 @@ $$ LANGUAGE plpgsql;
 
 -- Grant execute on search function
 GRANT EXECUTE ON FUNCTION public.search_user_memories TO anon, authenticated, service_role;
+
+-- ============================================
+-- Hub Upgrade RLS Policies
+-- ============================================
+
+-- Enable RLS on new hub tables
+ALTER TABLE public.sync_links ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.memory_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sync_conflicts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.derived_memories ENABLE ROW LEVEL SECURITY;
+
+-- Sync Links policies
+DROP POLICY IF EXISTS "Users can manage own sync_links" ON public.sync_links;
+CREATE POLICY "Users can manage own sync_links" ON public.sync_links
+    FOR ALL
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+-- Memory Events policies
+DROP POLICY IF EXISTS "Users can manage own memory_events" ON public.memory_events;
+CREATE POLICY "Users can manage own memory_events" ON public.memory_events
+    FOR ALL
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+-- Sync Conflicts policies
+DROP POLICY IF EXISTS "Users can manage own sync_conflicts" ON public.sync_conflicts;
+CREATE POLICY "Users can manage own sync_conflicts" ON public.sync_conflicts
+    FOR ALL
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+-- Derived Memories policies
+DROP POLICY IF EXISTS "Users can manage own derived_memories" ON public.derived_memories;
+CREATE POLICY "Users can manage own derived_memories" ON public.derived_memories
+    FOR ALL
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+-- Grant execute on new search functions
+GRANT EXECUTE ON FUNCTION public.search_memories_fts TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.search_memories_semantic TO anon, authenticated, service_role;
