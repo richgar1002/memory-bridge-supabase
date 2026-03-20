@@ -74,8 +74,9 @@ class ObsidianSync:
         self.client = memory_client
         self.direction = direction
         
-        # Track sync state
+        # Track sync state (load from DB for persistence)
         self.synced_files: Dict[str, str] = {}  # path -> content_hash
+        self._load_sync_links()
         
         # Statistics
         self.stats = {
@@ -85,6 +86,20 @@ class ObsidianSync:
             'failed': 0,
             'errors': []
         }
+    
+    def _load_sync_links(self):
+        """Load sync links from Supabase to restore persistent state."""
+        try:
+            if hasattr(self.client, 'get_all_sync_links'):
+                links = self.client.get_all_sync_links(provider="obsidian")
+                for link in links:
+                    external_id = link.get('external_id')
+                    last_hash = link.get('last_synced_hash')
+                    if external_id and last_hash:
+                        self.synced_files[external_id] = last_hash
+                logger.info(f"Loaded {len(links)} sync links from Supabase")
+        except Exception as e:
+            logger.warning(f"Could not load sync links: {e}")
     
     def _retry_with_backoff(self, func, *args, **kwargs) -> Any:
         """Execute function with retry logic"""
@@ -178,17 +193,23 @@ class ObsidianSync:
                         self.stats['skipped'] += 1
                         continue
                 
-                # Create memory in Supabase
-                def create_mem():
-                    return self.client.create_memory(
+                # Upsert memory in Supabase using hub model
+                def upsert_mem():
+                    return self.client.upsert_memory_from_sync(
+                        provider="obsidian",
+                        external_id=note_id,
                         title=note['title'],
                         content=note['content'],
                         tags=note['metadata'].get('tags', []),
-                        source=f"obsidian:{note_id}"
+                        metadata=note['metadata'],
+                        external_path=note.get('relative_path'),
+                        remote_updated_at=note.get('modified_at'),
                     )
                 
-                self._retry_with_backoff(create_mem)
+                result = self._retry_with_backoff(upsert_mem)
                 
+                # Write memory_id back to frontmatter if new (check if it was created)
+                # The upsert returns the memory, we could check revision == 1 for new
                 self.synced_files[note_id] = note['content_hash']
                 self.stats['created'] += 1
                 logger.debug(f"Synced: {note['title']}")

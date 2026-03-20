@@ -56,6 +56,10 @@ class NotionSync:
         self.client = memory_client
         self.direction = direction
         
+        # Track sync state (load from DB for persistence)
+        self.synced_pages: Dict[str, str] = {}  # page_id -> content_hash
+        self._load_sync_links()
+        
         # Statistics
         self.stats = {
             'created': 0,
@@ -64,6 +68,20 @@ class NotionSync:
             'failed': 0,
             'errors': []
         }
+    
+    def _load_sync_links(self):
+        """Load sync links from Supabase to restore persistent state."""
+        try:
+            if hasattr(self.client, 'get_all_sync_links'):
+                links = self.client.get_all_sync_links(provider="notion")
+                for link in links:
+                    external_id = link.get('external_id')
+                    last_hash = link.get('last_synced_hash')
+                    if external_id and last_hash:
+                        self.synced_pages[external_id] = last_hash
+                logger.info(f"Loaded {len(links)} sync links from Supabase")
+        except Exception as e:
+            logger.warning(f"Could not load sync links: {e}")
     
     def _retry_with_backoff(self, func, *args, **kwargs) -> Any:
         """Execute with retry logic"""
@@ -205,15 +223,18 @@ class NotionSync:
                     # Could check existing content hash here
                     pass
                 
-                def create_mem():
-                    return self.client.create_memory(
+                def upsert_mem():
+                    return self.client.upsert_memory_from_sync(
+                        provider="notion",
+                        external_id=page_id,
                         title=page['title'],
                         content=page['content'],
-                        source=f"notion:{page_id}",
-                        tags=['notion']
+                        tags=['notion'],
+                        metadata=page.get('metadata', {}),
+                        remote_updated_at=page.get('last_edited_time'),
                     )
                 
-                self._retry_with_backoff(create_mem)
+                self._retry_with_backoff(upsert_mem)
                 
                 self.stats['created'] += 1
                 logger.debug(f"Synced: {page['title']}")
