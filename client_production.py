@@ -508,7 +508,7 @@ class MemoryClient:
             self.log_memory_event(memory["id"], "synced", "adapter", after_hash=incoming_hash, user_id=uid)
 
             logger.info(f"Created new memory {memory['id']} from {provider}:{external_id}")
-            return memory
+            return {**memory, "action": "created"}
 
         else:
             # Existing link - check for changes
@@ -521,7 +521,7 @@ class MemoryClient:
                     lambda: self.supabase.table("memories").select("*").eq("id", memory_id).execute()
                 )
                 logger.debug(f"No changes for {provider}:{external_id}")
-                return memory_response.data[0]
+                return {**memory_response.data[0], "action": "skipped"}
 
             # Fetch current memory
             memory_response = self._retry_with_backoff(
@@ -553,7 +553,7 @@ class MemoryClient:
                     user_id=uid
                 )
                 logger.warning(f"Conflict detected for memory {memory_id}")
-                return current_memory
+                return {**current_memory, "action": "skipped"}
 
             # One side changed - update memory
             new_revision = current_memory.get("revision", 1) + 1
@@ -593,7 +593,7 @@ class MemoryClient:
             memory_response = self._retry_with_backoff(
                 lambda: self.supabase.table("memories").select("*").eq("id", memory_id).execute()
             )
-            return memory_response.data[0]
+            return {**memory_response.data[0], "action": "updated"}
 
     def log_memory_event(
         self,
