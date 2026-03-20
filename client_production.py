@@ -249,7 +249,7 @@ class MemoryClient:
             data = {}
             if title: data["title"] = title
             if content: data["content"] = content
-            if tags: data["tags"] = tags
+            if tags is not None: data["tags"] = tags
             
             def op():
                 return self.supabase.table("memories").update(data).eq("id", memory_id).eq("user_id", self.user_id).execute()
@@ -435,11 +435,13 @@ class MemoryClient:
     def update_sync_link(
         self,
         sync_link_id: str,
+        user_id: str = None,
         **kwargs
     ) -> Dict:
         """Update sync link fields."""
+        uid = user_id or self.user_id
         response = self._retry_with_backoff(
-            lambda: self.supabase.table("sync_links").update(kwargs).eq("id", sync_link_id).execute()
+            lambda: self.supabase.table("sync_links").update(kwargs).eq("id", sync_link_id).eq("user_id", uid).execute()
         )
         return response.data[0]
 
@@ -464,7 +466,6 @@ class MemoryClient:
         4. If link exists: compare hashes, update if changed, detect conflicts
         """
         from datetime import datetime
-        import uuid
 
         uid = user_id or self.user_id
         incoming_hash = self.compute_content_hash(title, content, metadata)
@@ -535,8 +536,8 @@ class MemoryClient:
                 # Create conflict record
                 self.create_conflict(
                     memory_id=memory_id,
-                    provider_a=provider,
-                    provider_b=existing_link.get("provider", provider),
+                    provider_a="supabase",
+                    provider_b=provider,
                     hash_a=current_hash,
                     hash_b=incoming_hash,
                     title_a=current_memory["title"],
@@ -571,13 +572,14 @@ class MemoryClient:
             )
 
             # Update sync link
-            self.update_sync_link(existing_link["id"], {
-                "last_synced_hash": incoming_hash,
-                "last_synced_revision": new_revision,
-                "last_synced_at": datetime.utcnow().isoformat(),
-                "remote_updated_at": remote_updated_at,
-                "sync_state": "linked"
-            })
+            self.update_sync_link(
+                existing_link["id"],
+                last_synced_hash=incoming_hash,
+                last_synced_revision=new_revision,
+                last_synced_at=datetime.utcnow().isoformat(),
+                remote_updated_at=remote_updated_at,
+                sync_state="linked"
+            )
 
             # Log events
             self.log_memory_event(
