@@ -279,7 +279,32 @@ class MemoryClient:
     # --- Search ---
     
     def search(self, query: str, limit: int = 10) -> List[Dict]:
-        """Search memories"""
+        """Full-text search memories using Supabase FTS"""
+        try:
+            import uuid
+            # Convert user_id string to UUID if needed
+            user_uuid = uuid.UUID(self.user_id) if isinstance(self.user_id, str) else self.user_id
+            
+            def op():
+                return self.supabase.rpc(
+                    "search_memories_fts",
+                    {
+                        "p_user_id": str(user_uuid),
+                        "p_query": query,
+                        "p_limit": limit
+                    }
+                ).execute()
+            
+            result = self._retry_with_backoff(op)
+            return result.data or []
+            
+        except Exception as e:
+            logger.warning(f"FTS search failed, falling back to basic: {e}")
+            # Fallback to basic search
+            return self._basic_search(query, limit)
+    
+    def _basic_search(self, query: str, limit: int = 10) -> List[Dict]:
+        """Basic substring search as fallback"""
         try:
             def op():
                 return self.supabase.table("memories").select("*").eq("user_id", self.user_id).execute()
@@ -296,7 +321,30 @@ class MemoryClient:
             return matches[:limit]
             
         except Exception as e:
-            logger.error(f"Search failed: {e}")
+            logger.error(f"Basic search failed: {e}")
+            return []
+    
+    def semantic_search(self, embedding: List[float], limit: int = 10) -> List[Dict]:
+        """Semantic search using vector similarity"""
+        try:
+            import uuid
+            user_uuid = uuid.UUID(self.user_id) if isinstance(self.user_id, str) else self.user_id
+            
+            def op():
+                return self.supabase.rpc(
+                    "search_memories_semantic",
+                    {
+                        "p_user_id": str(user_uuid),
+                        "p_embedding": embedding,
+                        "p_limit": limit
+                    }
+                ).execute()
+            
+            result = self._retry_with_backoff(op)
+            return result.data or []
+            
+        except Exception as e:
+            logger.error(f"Semantic search failed: {e}")
             return []
     
     # --- Stats ---

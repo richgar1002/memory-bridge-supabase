@@ -159,6 +159,77 @@ class NotionSync:
             logger.error(f"Error getting content: {e}")
             return ''
     
+    def _content_to_blocks(self, content: str, max_chunk_size: 1900) -> List[Dict]:
+        """Convert memory content to Notion block objects.
+        
+        Notion has a 100 block children limit per request and ~2000 char per block.
+        We chunk content to stay within limits.
+        """
+        blocks = []
+        lines = content.split('\n')
+        current_chunk = []
+        current_length = 0
+        
+        for line in lines:
+            line_length = len(line) + 1  # +1 for newline
+            
+            # If single line is too long, truncate it
+            if line_length > max_chunk_size:
+                # Flush current chunk first
+                if current_chunk:
+                    blocks.append({
+                        'object': 'block',
+                        'type': 'paragraph',
+                        'paragraph': {
+                            'rich_text': [{'type': 'text', 'text': {'content': '\n'.join(current_chunk)}}]
+                        }
+                    })
+                    current_chunk = []
+                    current_length = 0
+                
+                # Split long line into multiple blocks
+                while len(line) > max_chunk_size:
+                    blocks.append({
+                        'object': 'block',
+                        'type': 'paragraph',
+                        'paragraph': {
+                            'rich_text': [{'type': 'text', 'text': {'content': line[:max_chunk_size]}}]
+                        }
+                    })
+                    line = line[max_chunk_size:]
+                
+                # Handle remaining part
+                if line:
+                    current_chunk.append(line)
+                    current_length += len(line) + 1
+            elif current_length + line_length > max_chunk_size:
+                # Flush current chunk
+                blocks.append({
+                    'object': 'block',
+                    'type': 'paragraph',
+                    'paragraph': {
+                        'rich_text': [{'type': 'text', 'text': {'content': '\n'.join(current_chunk)}}]
+                    }
+                })
+                current_chunk = [line]
+                current_length = line_length
+            else:
+                current_chunk.append(line)
+                current_length += line_length
+        
+        # Flush remaining
+        if current_chunk:
+            blocks.append({
+                'object': 'block',
+                'type': 'paragraph',
+                'paragraph': {
+                    'rich_text': [{'type': 'text', 'text': {'content': '\n'.join(current_chunk)}}]
+                }
+            })
+        
+        # Limit to 100 blocks (Notion limit)
+        return blocks[:100]
+    
     def _parse_page(self, page: dict) -> Optional[Dict]:
         """Parse a Notion page"""
         try:
@@ -282,6 +353,7 @@ class NotionSync:
                 try:
                     page_id = memory['source'].replace('notion:', '')
                     
+                    # Update page title
                     def update_page():
                         return self.notion.pages.update(
                             page_id=page_id,
@@ -293,6 +365,27 @@ class NotionSync:
                         )
                     
                     self._retry_with_backoff(update_page)
+                    
+                    # Update page content - append blocks with memory content
+                    content = memory.get('content', '')
+                    if content:
+                        # Clear existing blocks (except first paragraph) and append new content
+                        try:
+                            # Split content into chunks for blocks
+                            content_blocks = self._content_to_blocks(content)
+                            
+                            # Append blocks to the page
+                            def append_blocks():
+                                return self.notion.blocks.children.append(
+                                    block_id=page_id,
+                                    children=content_blocks
+                                )
+                            
+                            self._retry_with_backoff(append_blocks)
+                            logger.debug(f"Appended content blocks to: {memory['title']}")
+                        except Exception as e:
+                            logger.warning(f"Could not append blocks to {page_id}: {e}")
+                    
                     self.stats['updated'] += 1
                     logger.debug(f"Updated: {memory['title']}")
                     
