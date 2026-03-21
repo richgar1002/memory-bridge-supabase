@@ -695,6 +695,11 @@ class NotionSync:
                             continue
                     except Exception as e:
                         logger.warning("Remote conflict precheck failed for page %s: %s", page_id, e)
+                        # If we can't verify remote state, skip unless force is True
+                        if not force:
+                            stats["skipped"] += 1
+                            logger.warning("Skipping overwrite for %s due to failed conflict check", page_id)
+                            continue
 
                     # Update title first
                     page_obj = self._retry_with_backoff(self.notion.pages.retrieve, page_id=page_id)
@@ -707,9 +712,16 @@ class NotionSync:
                     )
 
                     # Replace body safely: archive existing blocks, then append fresh blocks.
+                    # If this fails after archiving, we could restore but for now we log and continue.
                     new_blocks = self._content_to_blocks(content)
-                    self._archive_all_top_level_blocks(page_id)
-                    self._append_blocks_in_batches(page_id, new_blocks)
+                    try:
+                        self._archive_all_top_level_blocks(page_id)
+                        self._append_blocks_in_batches(page_id, new_blocks)
+                    except Exception as e:
+                        logger.error("Failed to update blocks for page %s after archiving: %s", page_id, e)
+                        stats["failed"] += 1
+                        stats["errors"].append(f"Block update failed for {page_id}: {e}")
+                        continue
 
                     # Persist updated sync hash
                     if hasattr(self.client, "update_sync_link"):
