@@ -6,6 +6,39 @@ Before going to production, enable Row-Level Security (RLS) to protect user data
 
 ---
 
+## Environment Variables
+
+Create a `.env` file (copy from `.env.example`) with these required variables:
+
+```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_KEY=your-service-role-key
+```
+
+### API Authentication
+
+The API now requires JWT Bearer token authentication:
+
+```bash
+# Login to get token
+curl -X POST https://your-api.com/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "password"}'
+
+# Use token in requests
+curl https://your-api.com/memories \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+### Security Changes Made
+
+1. Removed hardcoded Supabase keys from `embeddings.py`
+2. Replaced weak header-based auth with proper JWT validation
+3. Added `/auth/login` and `/auth/signup` endpoints
+4. Search now uses PostgreSQL FTS instead of client-side filtering
+
+---
+
 ## Run Production RLS
 
 Copy the contents of `rls_production.sql` and run it in Supabase SQL Editor.

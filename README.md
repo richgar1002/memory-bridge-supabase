@@ -10,8 +10,9 @@
 - ✅ Collections (folders)
 - ✅ Memories with metadata
 - ✅ Tags
-- ✅ Full-text search
-- ✅ User authentication
+- ✅ Full-text search (PostgreSQL FTS)
+- ✅ Semantic search (vector embeddings)
+- ✅ User authentication (JWT)
 
 ### Sync (Bi-directional)
 - ✅ Obsidian ↔ Supabase
@@ -24,27 +25,50 @@
 - ✅ Rate limit handling
 - ✅ Authentication errors
 - ✅ Comprehensive logging
-- ✅ Error tracking
 
 ### Security
 - ✅ Row-level security (RLS)
 - ✅ User isolation
-- ✅ API key auth
+- ✅ JWT Bearer token authentication
+
+---
+
+## Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/richgar1002/memory-bridge-supabase.git
+cd memory-bridge-supabase
+
+# Install dependencies
+pip install -e .
+
+# Or for development
+pip install -e ".[dev]"
+```
+
+---
+
+## Configuration
+
+Copy `.env.example` to `.env` and configure:
+
+```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_KEY=your-service-role-key
+OLLAMA_URL=http://localhost:11434  # optional
+```
 
 ---
 
 ## Quick Start
 
+### Python Client
+
 ```python
-from client_production import create_memory_client, ClientConfig
+from client import create_memory_client, ClientConfig
 
-# Configure client
-config = ClientConfig(
-    max_retries=3,
-    retry_delay=2.0,
-    verbose=True
-)
-
+config = ClientConfig(max_retries=3, retry_delay=2.0)
 client = create_memory_client(
     supabase_url="https://your-project.supabase.co",
     supabase_key="your-anon-key",
@@ -52,70 +76,66 @@ client = create_memory_client(
     config=config
 )
 
-# Create memory (with automatic retry)
+# Create memory
 memory = client.create_memory(
     title="EURUSD Trade",
     content="Bearish divergence on 4H"
 )
+
+# Search
+results = client.search("EURUSD")
 ```
 
-## Error Handling
+### API Server
 
-The client handles:
+```bash
+# Set environment variables first
+export SUPABASE_URL=https://your-project.supabase.co
+export SUPABASE_SERVICE_KEY=your-key
 
-| Error Type | Handling |
-|-----------|----------|
-| Network timeout | Retry with backoff |
-| Rate limited (429) | Wait and retry |
-| Auth error | Raise AuthenticationError |
-| Not found (404) | Raise NotFoundError |
-| Other errors | Retry, then raise |
-
-```python
-from client_production import (
-    create_memory_client,
-    AuthenticationError,
-    NotFoundError,
-    ClientError
-)
-
-try:
-    memory = client.create_memory(title="Test", content="Content")
-except AuthenticationError:
-    print("Check your credentials")
-except NotFoundError:
-    print("Resource not found")
-except ClientError as e:
-    print(f"Failed: {e}")
+# Run server
+python api.py
+# or
+uvicorn api:app --reload
 ```
 
-## Sync with Error Handling
+### API Authentication
+
+```bash
+# Login to get JWT token
+curl -X POST http://localhost:8003/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password"}'
+
+# Use token in requests
+curl http://localhost:8003/memories \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+---
+
+## Sync
 
 ### Obsidian Sync
 
 ```python
-from obsidian_sync_production import create_obsidian_sync, SyncDirection
+from obsidian_sync import create_obsidian_sync, SyncDirection
 
-# Create sync with direction
 sync = create_obsidian_sync(
     vault_path="/path/to/vault",
     memory_client=client,
     direction=SyncDirection.BIDIRECTIONAL
 )
 
-# Sync (returns detailed result)
-result = sync.sync_bidirectional(force=False)
-
+result = sync.sync_bidirectional()
 print(f"Status: {result.status}")
 print(f"Synced: {result.synced}")
-print(f"Failed: {result.failed}")
-print(f"Errors: {result.errors}")
 ```
 
 ### Notion Sync
 
 ```python
-from notion_sync_production import create_notion_sync, SyncDirection
+from notion_sync import create_notion_sync, SyncDirection
 
 sync = create_notion_sync(
     notion_client=notion,
@@ -124,55 +144,75 @@ sync = create_notion_sync(
 )
 
 result = sync.sync_bidirectional()
-
 print(f"Status: {result.status}")
 ```
 
-## API
+---
 
-Run the API:
-```bash
-python api_complete.py
-```
-
-### Endpoints
+## API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/memories` | Create memory |
-| GET | `/memories` | List memories |
-| GET | `/memories/{id}` | Get memory |
-| PUT | `/memories/{id}` | Update memory |
-| DELETE | `/memories/{id}` | Delete memory |
-| POST | `/search` | Search |
+| POST | `/auth/login` | Login |
+| POST | `/auth/signup` | Register |
 | GET | `/collections` | List collections |
 | POST | `/collections` | Create collection |
 | DELETE | `/collections/{id}` | Delete collection |
+| GET | `/memories` | List memories |
+| POST | `/memories` | Create memory |
+| GET | `/memories/{id}` | Get memory |
+| PUT | `/memories/{id}` | Update memory |
+| DELETE | `/memories/{id}` | Delete memory |
+| POST | `/search` | Full-text search |
+| POST | `/sync/obsidian` | Sync Obsidian |
+| POST | `/sync/notion` | Sync Notion |
+| GET | `/stats` | Get statistics |
+| GET | `/health` | Health check |
 
-## Files
+---
 
-| File | Description |
-|------|-------------|
-| `schema.sql` | Database schema |
-| `rls_production.sql` | Production security |
-| `client_production.py` | Client with error handling |
-| `obsidian_sync_production.py` | Obsidian sync |
-| `notion_sync_production.py` | Notion sync |
-| `api_complete.py` | REST API |
-
-## Architecture
+## Project Structure
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  Obsidian  │────▶│  Supabase   │◀────│   Notion   │
-│   Vault    │◀────│ PostgreSQL  │────▶│   Pages    │
-└─────────────┘     └──────┬──────┘     └─────────────┘
-                          │
-                   ┌──────▼──────┐
-                   │  API + SDK   │
-                   │   + Errors  │
-                   └─────────────┘
+memory-bridge-supabase/
+├── api.py              # FastAPI REST API
+├── client.py           # Memory client SDK
+├── obsidian_sync.py    # Obsidian sync adapter
+├── notion_sync.py      # Notion sync adapter
+├── embeddings.py       # Vector embeddings
+├── schema.sql          # Database schema
+├── rls_production.sql # Row-level security
+├── pyproject.toml      # Dependencies
+├── tests/              # Test suite
+└── .github/workflows/  # CI/CD
 ```
+
+---
+
+## Development
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Lint
+ruff check .
+
+# Type check
+mypy .
+```
+
+---
+
+## Database Setup
+
+1. Run `schema.sql` in Supabase SQL Editor
+2. Run `rls_production.sql` for production security
+
+---
 
 ## Status
 
@@ -182,10 +222,7 @@ python api_complete.py
 | Bi-directional Sync | ✅ |
 | Error Handling | ✅ |
 | Retry Logic | ✅ |
-| Logging | ✅ |
-| RLS | ✅ |
-| Production Ready | ✅ |
-
----
-
-**Note:** Run `schema.sql` first, then `rls_production.sql` for production.
+| JWT Auth | ✅ |
+| PostgreSQL FTS | ✅ |
+| CI/CD | ✅ |
+| Test Suite | ✅ |
